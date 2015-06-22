@@ -24,7 +24,7 @@ using System.IO.Compression;
 using System.Linq;
 using System.Text;
 
-namespace SharpPRC 
+namespace SharpPRC
 {
     //http://help.adobe.com/livedocs/acrobat_sdk/9/Acrobat9_HTMLHelp/API_References/PRCReference/PRC_Format_Specification/index.html
 
@@ -79,7 +79,7 @@ namespace SharpPRC
             UInt32 size = (UInt32)list.Count;
             _streamWriter.Write(size);
             foreach (var value in list)
-                value.Serialize(this);
+                value.SerializeContentTessFace(this);
         }
     }
 
@@ -93,39 +93,55 @@ namespace SharpPRC
         public const UInt32 PRC_TYPE_TESS_3D_Wire = (PRC_TYPE_TESS + 5);
         public const UInt32 PRC_TYPE_TESS_Markup = (PRC_TYPE_TESS + 6);
 
+        public const UInt32 PRC_TYPE_RI = 230;
+
+        public const UInt32 PRC_TYPE_RI_PolyBrepModel = (PRC_TYPE_RI + 7);
+
         public const UInt32 PRC_TYPE_GRAPH = (700);
         public const UInt32 PRC_TYPE_GRAPH_Material = (PRC_TYPE_GRAPH + 2);
+
     }
 
     public class PRC3DTess
     {
-        internal bool _isCalcuated = false;
-        internal readonly List<double> _coordinates = new List<double>();
+        internal bool is_calculated = false;
+        internal readonly List<double> coordinates = new List<double>();
 
-        internal bool _hasFaces = false;
-        internal bool _hasLoops = false;
+        internal bool has_faces = false;
+        internal bool has_loops = false;
 
-        internal readonly List<double> _normalCoordinate = new List<double>();
-        internal readonly List<UInt32> _wireIndex = new List<UInt32>();
-        internal readonly List<UInt32> _triangulatedIndex = new List<UInt32>();
+        internal readonly List<double> normal_coordinate = new List<double>();
+        internal readonly List<UInt32> wire_index = new List<UInt32>();
+        internal readonly List<UInt32> triangulated_index = new List<UInt32>();
 
-        internal readonly List<PRCTessFace> _faceTessellation = new List<PRCTessFace>();
+        internal readonly List<PRCTessFace> face_tessellation = new List<PRCTessFace>();
 
-        internal readonly List<double> _textureCoordinate = new List<double>();
+        internal readonly List<double> texture_coordinate = new List<double>();
 
-        public void Serialize(PRCbitStreamWriter outStream)
+        private void SerializeContentBaseTessData(PRCbitStreamWriter outStream)
+        {
+            outStream.Write(is_calculated);
+            outStream.Write(coordinates);
+        }
+
+        private void SerializeContent3DTess(PRCbitStreamWriter outStream)
+        {
+            SerializeContentBaseTessData(outStream);
+
+            outStream.Write(has_faces);
+            outStream.Write(has_loops);
+            outStream.Write(false); //must recalculate normals
+            outStream.Write(normal_coordinate);
+            outStream.Write(wire_index);
+            outStream.Write(triangulated_index);
+            outStream.Write(face_tessellation);
+            outStream.Write(texture_coordinate);
+        }
+
+        public void Serialize3DTess(PRCbitStreamWriter outStream)
         {
             outStream.Write(PRCType.PRC_TYPE_TESS_3D);
-            outStream.Write(_isCalcuated);
-            outStream.Write(_coordinates);
-            outStream.Write(_hasFaces);
-            outStream.Write(_hasLoops);
-            outStream.Write(false); //must recalculate normals
-            outStream.Write(_normalCoordinate);
-            outStream.Write(_wireIndex);
-            outStream.Write(_triangulatedIndex);
-            outStream.Write(_faceTessellation);
-            outStream.Write(_textureCoordinate);
+            SerializeContent3DTess(outStream);
         }
     }
 
@@ -134,31 +150,31 @@ namespace SharpPRC
         internal const UInt32 PRC_GRAPHICS_Show = 0x0001;
         internal const UInt32 PRC_FACETESSDATA_Triangle = 0x0002;
 
-        internal readonly List<UInt32> _lineAttributes = new List<UInt32>();
-        internal UInt32 _startWire = 0;
-        internal readonly List<UInt32> _sizesWire = new List<UInt32>();
-        internal UInt32 _usedEntitiesFlag = 0;
-        internal UInt32 _startTriangulated = 0;
-        internal readonly List<UInt32> _sizesTriangulated = new List<UInt32>();
-        internal UInt32 _numberOfTextureCoordinateIndexes = 0;
+        internal readonly List<UInt32> line_attributes = new List<UInt32>();
+        internal UInt32 start_wire = 0;
+        internal readonly List<UInt32> sizes_wire = new List<UInt32>();
+        internal UInt32 used_entities_flag = 0;
+        internal UInt32 start_triangulated = 0;
+        internal readonly List<UInt32> sizes_triangulated = new List<UInt32>();
+        internal UInt32 number_of_texture_coordinate_indexes = 0;
 
-        internal UInt32 _behaviour = PRC_GRAPHICS_Show;
+        internal UInt32 behaviour = PRC_GRAPHICS_Show;
 
-        public void Serialize(PRCbitStreamWriter outStream)
+        public void SerializeContentTessFace(PRCbitStreamWriter outStream)
         {
             outStream.Write(PRCType.PRC_TYPE_TESS_Face);
-            outStream.Write(_lineAttributes);
-            outStream.Write(_startWire);
-            outStream.Write(_sizesWire);
-            outStream.Write(_usedEntitiesFlag);
-            outStream.Write(_startTriangulated);
-            outStream.Write(_sizesTriangulated);
+            outStream.Write(line_attributes);
+            outStream.Write(start_wire);
+            outStream.Write(sizes_wire);
+            outStream.Write(used_entities_flag);
+            outStream.Write(start_triangulated);
+            outStream.Write(sizes_triangulated);
 
-            outStream.Write(_numberOfTextureCoordinateIndexes);
+            outStream.Write(number_of_texture_coordinate_indexes);
 
             outStream.Write(false); //HasVertexColors = False
-            if (_lineAttributes.Count > 0)
-                outStream.Write(_behaviour);
+            if (line_attributes.Count > 0)
+                outStream.Write(behaviour);
         }
     }
 
@@ -170,10 +186,12 @@ namespace SharpPRC
         internal string name = string.Empty;
         internal readonly UInt32 CAD_identifier = cadID++;
         internal UInt32 CAD_persistent_identifier = 0;
-        internal readonly UInt32 PRC_unique_identifier = prcID;
+        internal readonly UInt32 PRC_unique_identifier = prcID++;
 
-        public void Serialize(PRCbitStreamWriter outStream)
+        protected void SerializeContentPRCBase(PRCbitStreamWriter outStream)
         {
+            outStream.Write((UInt32)0); //Attributes
+
             outStream.Write(name);
             outStream.Write(CAD_identifier);
             outStream.Write(CAD_persistent_identifier);
@@ -194,12 +212,11 @@ namespace SharpPRC
         internal double emissive_alpha;
         internal double specular_alpha;
 
-        public void Serialize(PRCbitStreamWriter outStream)
+        public void SerializeContentMaterial(PRCbitStreamWriter outStream)
         {
             outStream.Write(PRCType.PRC_TYPE_GRAPH_Material);
-            outStream.Write((UInt32)0); //Attributes
 
-            base.Serialize(outStream);
+            base.SerializeContentPRCBase(outStream);
 
             outStream.Write(ambient + 1);
             outStream.Write(diffuse + 1);
@@ -213,29 +230,42 @@ namespace SharpPRC
         }
     }
 
-    public struct PRCRgbColor
-    {
-        public double R;
-        public double G;
-        public double B;
-    }
-
     public class PRCPolyBrepModel : PRCContentBase
     {
-        const UInt32 m1 = UInt32.MaxValue;
+        internal bool is_closed = false;
 
-        internal bool _isClosed = false;
+        internal UInt32 index_local_coordinate_system = UInt32.MaxValue;
+        internal UInt32 index_tessellation = UInt32.MaxValue;
 
-        UInt32 index_local_coordinate_system = m1;
-        UInt32 index_tessellation = m1;
-
-        UInt32 layer_index = m1;
-        UInt32 index_of_line_style = m1;
-        UInt32 behaviour_bit_field = m1;
-
-        public void Serialize(PRCbitStreamWriter outStream)
+        private void SerializeGraphics(PRCbitStreamWriter outStream)
         {
+            outStream.Write(false);
+        }
 
+        private void SerializePRCBaseWithGraphics(PRCbitStreamWriter outStream)
+        {
+            SerializeContentPRCBase(outStream);
+            SerializeGraphics(outStream);
+        }
+
+        private void SerializeRepresentationItemContent(PRCbitStreamWriter outStream)
+        {
+            SerializePRCBaseWithGraphics(outStream);
+            outStream.Write(index_local_coordinate_system + 1);
+            outStream.Write(index_tessellation + 1);
+        }
+
+        private void SerializeUserData(PRCbitStreamWriter outStream)
+        {
+            outStream.Write(0); //No UserData
+        }
+
+        public void SerializePolyBrepModel(PRCbitStreamWriter outStream)
+        {
+            outStream.Write(PRCType.PRC_TYPE_RI_PolyBrepModel);
+            SerializeRepresentationItemContent(outStream);
+            outStream.Write(is_closed);
+            SerializeUserData(outStream);
         }
     }
 
@@ -252,6 +282,13 @@ namespace SharpPRC
         {
             //Todo
         }
+    }
+
+    public struct PRCRgbColor
+    {
+        public double R;
+        public double G;
+        public double B;
     }
 
     public class PRCFile
@@ -303,9 +340,14 @@ namespace SharpPRC
             //Todo
         }
 
-        public void Serialize(PRCbitStreamWriter outStream)
+        public void SerializePRCHeader(PRCbitStreamWriter outStream)
         {
             //Todo
+        }
+
+        public void SerializePRC(PRCbitStreamWriter outStream)
+        {
+            SerializePRCHeader(outStream);
         }
 
         public UInt32 createTriangleMesh(
@@ -320,37 +362,37 @@ namespace SharpPRC
             var tess = new PRC3DTess();
             var tessFace = new PRCTessFace();
 
-            tessFace._usedEntitiesFlag = PRCTessFace.PRC_FACETESSDATA_Triangle;
-            tessFace._numberOfTextureCoordinateIndexes = 0;
+            tessFace.used_entities_flag = PRCTessFace.PRC_FACETESSDATA_Triangle;
+            tessFace.number_of_texture_coordinate_indexes = 0;
 
             foreach (var p in P)
             {
-                tess._coordinates.Add(p.Item1);
-                tess._coordinates.Add(p.Item2);
-                tess._coordinates.Add(p.Item3);
+                tess.coordinates.Add(p.Item1);
+                tess.coordinates.Add(p.Item2);
+                tess.coordinates.Add(p.Item3);
             }
 
             foreach (var p in N)
             {
-                tess._normalCoordinate.Add(p.Item1);
-                tess._normalCoordinate.Add(p.Item2);
-                tess._normalCoordinate.Add(p.Item3);
+                tess.normal_coordinate.Add(p.Item1);
+                tess.normal_coordinate.Add(p.Item2);
+                tess.normal_coordinate.Add(p.Item3);
             }
 
             for (int i = 0; i < PI.Length; i++)
             {
-                tess._triangulatedIndex.Add(3 * NI[i].Item1);
-                tess._triangulatedIndex.Add(3 * PI[i].Item1);
+                tess.triangulated_index.Add(3 * NI[i].Item1);
+                tess.triangulated_index.Add(3 * PI[i].Item1);
 
-                tess._triangulatedIndex.Add(3 * NI[i].Item2);
-                tess._triangulatedIndex.Add(3 * PI[i].Item2);
+                tess.triangulated_index.Add(3 * NI[i].Item2);
+                tess.triangulated_index.Add(3 * PI[i].Item2);
 
-                tess._triangulatedIndex.Add(3 * NI[i].Item3);
-                tess._triangulatedIndex.Add(3 * PI[i].Item3);
+                tess.triangulated_index.Add(3 * NI[i].Item3);
+                tess.triangulated_index.Add(3 * PI[i].Item3);
             }
 
-            tessFace._sizesTriangulated.Add((UInt32)PI.Length);
-            tess._faceTessellation.Add(tessFace);
+            tessFace.sizes_triangulated.Add((UInt32)PI.Length);
+            tess.face_tessellation.Add(tessFace);
             _tessellations.Add(tess);
 
             return (UInt32)(_tessellations.Count - 1);
